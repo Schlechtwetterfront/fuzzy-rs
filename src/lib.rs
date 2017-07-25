@@ -2,6 +2,7 @@
 
 use std::cmp::{max, Ordering};
 
+/// Defines a continuous match in the target string of the search.
 #[derive(Debug, Clone)]
 pub struct Match {
     pub start: usize,
@@ -24,6 +25,8 @@ impl Match {
     }
 }
 
+/// A single search result.
+/// Contains the calculated match score and all matches.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     score: isize,
@@ -31,6 +34,7 @@ pub struct SearchResult {
 }
 
 impl SearchResult {
+    /// Creates an empty instance.
     pub fn new() -> Self {
         SearchResult {
             score: 0,
@@ -38,6 +42,7 @@ impl SearchResult {
         }
     }
 
+    /// Creates an instance with the given score and matches.
     pub fn with(score: isize, matches: Vec<Match>) -> Self {
         SearchResult {
             score: score,
@@ -74,6 +79,25 @@ impl PartialEq for SearchResult {
     }
 }
 
+/// Container for search configuration.
+/// Allows for adjusting the factors used to calculate the match score.
+///
+/// # Examples
+/// 
+/// Basic usage:
+///
+///     use sublime_fuzzy::FuzzySearcher;
+///
+///     let mut search = FuzzySearcher::new();
+///
+///     search.set_search("something");
+///     search.set_target("some search thing");
+///
+///     // Weight consecutive matching chars less.
+///     search.set_score_consecutive(4);
+///
+///     println!("result: {:?}", search.best_match());
+///
 pub struct FuzzySearcher {
     score_distance: usize,
     score_found_char: usize,
@@ -83,6 +107,7 @@ pub struct FuzzySearcher {
 }
 
 impl FuzzySearcher {
+    /// Creates a default `FuzzySearcher` instance.
     pub fn new() -> Self {
         FuzzySearcher {
             score_distance: 4,
@@ -93,26 +118,33 @@ impl FuzzySearcher {
         }
     }
 
+    /// Sets score used to adjust for distance between matching chars.
     pub fn set_score_distance(&mut self, score: usize) {
         self.score_distance = score;
     }
 
+    /// Sets score added for each found char.
     pub fn set_score_found_char(&mut self, score: usize) {
         self.score_found_char = score;
     }
 
+    /// Sets score added for every consecutive matching char.
     pub fn set_score_consecutive(&mut self, score: usize) {
         self.score_consecutive = score;
     }
 
+    /// Sets search string.
     pub fn set_target(&mut self, target: &str) {
         self.target = target.to_owned();
     }
 
+    /// Sets string to be searched in.
     pub fn set_search(&mut self, search: &str) {
         self.search = search.to_owned();
     }
 
+    /// Calculates score for a match chain and accumulates it all in a 
+    /// `SearchResult`.
     pub fn chain_score(&mut self, match_chain: &Vec<usize>) -> SearchResult {
         let mut matches = Vec::new();
         let mut score: isize = 0;
@@ -158,6 +190,7 @@ impl FuzzySearcher {
         SearchResult::with(score, matches)
     }
 
+    /// Gets the best match for the given search string.
     pub fn best_match(&mut self) -> Option<SearchResult> {
         let chains = match_chains(&self.search, &self.target, 0, 0, &mut Vec::new());
         let mut results: Vec<SearchResult> = chains.iter().map(|x| self.chain_score(x)).collect();
@@ -171,6 +204,8 @@ impl FuzzySearcher {
     }
 }
 
+/// Gets all occurences of `what` in `target` starting from `search_offset`.
+///
 fn occurences(what: char, target: &str, search_offset: usize) -> Option<Vec<usize>> {
     let mut occurences = Vec::new();
     let mut start_index = search_offset;
@@ -189,6 +224,8 @@ fn occurences(what: char, target: &str, search_offset: usize) -> Option<Vec<usiz
     }
 }
 
+/// Gets all possible match chains of `search` in `target`.
+///
 fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usize, list: &Vec<usize>) -> Vec<Vec<usize>> {
     let mut search_char;
 
@@ -226,6 +263,20 @@ fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usi
     results
 }
 
+/// Returns the best match for `search` in `target`.
+///
+/// # Examples
+///
+/// Basic usage:
+///
+///     use sublime_fuzzy::best_match;
+///
+///     let s = "some search thing";
+///     let search = "something";
+///     let result = best_match(search, s).unwrap();
+///
+///     println!("score: {:?} matches: {:?}", result.score(), result.matches());
+///
 pub fn best_match(search: &str, target: &str) -> Option<SearchResult> {
     let mut searcher = FuzzySearcher::new();
     searcher.set_search(search);
@@ -234,11 +285,77 @@ pub fn best_match(search: &str, target: &str) -> Option<SearchResult> {
     searcher.best_match()
 }
 
+/// Formats a `SearchResult` by appending `before` before any matches and `after`
+/// after any matches.
+///
+/// # Examples
+///
+/// Basic usage:
+/// 
+///     use sublime_fuzzy::{best_match, format_simple};
+///
+///     let s = "some search thing";
+///     let search = "something";
+///     let result = best_match(search, s).unwrap();
+///     
+///     println!("formatted: {:?}", format_simple(&result, s, "<span>", "</span>"));
+///
+pub fn format_simple(result: &SearchResult, string: &str, before: &str, after: &str) -> String {
+    let str_before = before.to_owned();
+    let str_after = after.to_owned();
+
+    let mut pieces = Vec::new();
+
+    let mut last_end = 0;
+
+    for m in &result.matches {
+        // Take piece between last match and this match.
+        pieces.push(string.chars().skip(last_end).take(m.start - last_end).collect::<String>());
+        // Add identifier for matches.
+        pieces.push(str_before.clone());
+        // Add actual match.
+        pieces.push(string.chars().skip(m.start).take(m.len).collect());
+        // Add after element.
+        pieces.push(str_after.clone());
+        last_end = m.start + m.len;
+    }
+
+    // If there's characters left after the last match, make sure to append them.
+    if last_end != string.len() {
+        pieces.push(string.chars().skip(last_end).take_while(|_| true).collect::<String>());
+    }
+    return pieces.join("");
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn it_works() {
         use best_match;
-        println!("result: {:?}", best_match("observablecollection", "obsinline"));
+        println!("result: {:?}", best_match("obsinline", "observablecollection"));
+    }
+    #[test]
+    fn formatting_works() {
+        use {best_match, format_simple};
+        let s = "observablecollection";
+        println!(
+            "formatted: {:?}",
+            format_simple(
+                &best_match("obsinline", s).unwrap(),
+                s,
+                "<span>",
+                "</span>"
+            )
+        );
+    }
+    #[test]
+    fn formatting_works_2() {
+        use {best_match, format_simple};
+    
+        let s = "some search thing";
+        let search = "something";
+        let result = best_match(search, s).unwrap();
+         
+        println!("formatted: {:?}", format_simple(&result, s, "<b>", "</b>"));
     }
 }

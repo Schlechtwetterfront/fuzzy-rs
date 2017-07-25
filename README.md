@@ -4,7 +4,7 @@ Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 
 ### Documentation
 
-
+Check out the documentation at [docs.rs](https://docs.rs/sublime_fuzzy/0.2.0/sublime_fuzzy/).
 
 ### Usage
 

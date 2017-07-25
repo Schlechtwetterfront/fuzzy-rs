@@ -44,6 +44,14 @@ impl SearchResult {
             matches: matches,
         }        
     }
+
+    pub fn score(&self) -> isize {
+        self.score
+    }
+
+    pub fn matches(&self) -> &Vec<Match> {
+        &self.matches
+    }
 }
 
 impl Ord for SearchResult {
@@ -105,7 +113,7 @@ impl FuzzySearcher {
         self.search = search.to_owned();
     }
 
-    pub fn chain_score(&mut self, match_chain: &Vec<(usize, char)>) -> SearchResult {
+    pub fn chain_score(&mut self, match_chain: &Vec<usize>) -> SearchResult {
         let mut matches = Vec::new();
         let mut score: isize = 0;
 
@@ -117,8 +125,8 @@ impl FuzzySearcher {
 
         let mut first_char = true;
 
-        for &(i, _) in match_chain {
-            if i == last_index && !first_char {
+        for pos in match_chain {
+            if *pos == last_index + 1 && !first_char {
                 consecutive_char_score += self.score_consecutive;
                 current_match.len += 1;
             } else {
@@ -126,12 +134,12 @@ impl FuzzySearcher {
                     matches.push(current_match);
                 }
                 consecutive_char_score = 0;
-                current_match = Match::with(i, 1);
+                current_match = Match::with(*pos, 1);
             }
 
             let mut dist: isize = 0;
             if !first_char {
-                dist = max(i as isize - last_index as isize - 1, 0) as isize;
+                dist = max(*pos as isize - last_index as isize - 1, 0) as isize;
             }
 
             first_char = false;
@@ -140,7 +148,7 @@ impl FuzzySearcher {
             score += self.score_found_char as isize;
             score += consecutive_char_score as isize;
 
-            last_index = i;
+            last_index = *pos;
         }
 
         if current_match.len > 0 {
@@ -154,6 +162,7 @@ impl FuzzySearcher {
         let chains = match_chains(&self.search, &self.target, 0, 0, &mut Vec::new());
         let mut results: Vec<SearchResult> = chains.iter().map(|x| self.chain_score(x)).collect();
         results.sort();
+        results.reverse();
 
         if let Some(r) = results.first() {
             return Some(r.to_owned());
@@ -167,12 +176,11 @@ fn occurences(what: char, target: &str, search_offset: usize) -> Option<Vec<usiz
     let mut start_index = search_offset;
     loop {
         if let Some(next_start) = target.chars().skip(start_index).position(|x| x == what) {
+            occurences.push(next_start + start_index);
             start_index = next_start + start_index + 1;
-            occurences.push(next_start);
         } else {
             break;
         }
-        println!("occurences");
     }
     if occurences.len() > 0 {
         Some(occurences)
@@ -181,13 +189,16 @@ fn occurences(what: char, target: &str, search_offset: usize) -> Option<Vec<usiz
     }
 }
 
-fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usize, list: &Vec<(usize, char)>) -> Vec<Vec<(usize, char)>> {
-    if index > target.len() - 1 {
+fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usize, list: &Vec<usize>) -> Vec<Vec<usize>> {
+    let mut search_char;
+
+    if let Some(c) = search.chars().nth(index) {
+        search_char = c;
+    } else {
         let mut container = Vec::new();
         container.push(list.clone());
         return container;
     }
-    let mut search_char = search.chars().nth(index).unwrap();
 
     let occurences = loop {
         if let Some(result) = occurences(search_char, target, search_offset) {
@@ -204,10 +215,10 @@ fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usi
         }
     };
 
-    let mut results: Vec<Vec<(usize, char)>> = Vec::new();
+    let mut results: Vec<Vec<usize>> = Vec::new();
     for o in occurences {
         let mut list_cpy = list.clone();
-        list_cpy.push((o, search_char));
+        list_cpy.push(o);
 
         results.append(&mut match_chains(search, target, o + 1, index + 1, &mut list_cpy));
     }

@@ -1,6 +1,6 @@
 [package]
-name = "fuzzy"
-version = "0.1.0"
+name = "sublime_fuzzy"
+version = "0.2.0"
 authors = ["Benedikt Schatz <schlchtwtrfrnt@gmail.com>"]
 
 [dependencies]

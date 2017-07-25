@@ -2,5 +2,11 @@
 name = "sublime_fuzzy"
 version = "0.2.0"
 authors = ["Benedikt Schatz <schlchtwtrfrnt@gmail.com>"]
+description = "Fuzzy matching algorithm based on Sublime Text's string search."
+repository = "https://github.com/Schlechtwetterfront/fuzzy-rs"
+readme ="README.md"
+keywords = ["fuzzy", "match", "search", "text"]
+categories = ["text-processing", "algorithms"]
+license-file = "LICENSE"
 
 [dependencies]

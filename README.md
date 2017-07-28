@@ -1,6 +1,12 @@
 # sublime_fuzzy
 
-Fuzzy matching algorithm based on Sublime Text's string search. Iterates through characters of a search string and calculates a score based on matching consecutive/close groups of characters. Tries to find the best match by scoring multiple match paths.
+Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
+characters of a search string and calculates a score based on matching
+consecutive/close groups of characters. Tries to find the best match by scoring
+multiple match paths.
+
+Walks _all_ paths through the string that is being searched. Which means it
+gets slow relatively quickly.
 
 ### Documentation
 
@@ -21,7 +27,10 @@ let result = best_match(search, s).unwrap();
 println!("score: {:?}", result.score());
 ```
 
-Simple formatting:
+`Match.continuous_matches()` returns a list of consecutive matches
+(`(start_index, length)`). Based on those the input string can be formatted.
+`sublime_fuzzy` provides a simple formatting function that wraps matches in
+tags.
 
 ```rust
 use sublime_fuzzy::{best_match, format_simple};
@@ -34,18 +43,24 @@ let result = best_match(search, s).unwrap();
 println!("formatted: {:?}", format_simple(&result, s, "<span>", "</span>"));
 ```
 
-Adjust scoring:
+Matches are scored based on consecutively matching chars (bonus) and distance
+between two chars (penalty). The actual values can be adjusted.
 
 ```rust
-use sublime_fuzzy::FuzzySearcher;
+use sublime_fuzzy::{FuzzySearch, ScoreConfig};
 
-let mut search = FuzzySearcher::new();
+let mut search = FuzzySearch::new("something", "some search thing");
 
-search.set_search("something");
-search.set_target("some search thing");
-
+let config = ScoreConfig {
+    bonus_consecutive: 20,
+    penalty_distance: 8
+};
 // Weight consecutive matching chars less.
-search.set_score_consecutive(4);
+search.set_score_config(config);
 
 println!("result: {:?}", search.best_match());
 ```
+
+**Note:** This module removes any whitespace in the pattern (`'something'`
+in the examples above). It does not apply any other formatting. Lowercasing
+the inputs for example has to be done manually.

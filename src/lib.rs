@@ -50,52 +50,31 @@ println!("result: {:?}", search.best_match());
 ```
 
 */
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
-use std::cmp::{max, Ordering};
-
-/// Defines a continuous match in the target string of the search.
-#[derive(Debug, Clone)]
-pub struct Match {
-    pub start: usize,
-    pub len: usize,
-}
-
-impl Match {
-    pub fn new() -> Self {
-        Match {
-            start: 0,
-            len: 0,
-        }
-    }
-
-    pub fn with(start: usize, len: usize) -> Self {
-        Match {
-            start: start,
-            len: len,
-        }
-    }
-}
+type CharMap = HashMap<char, Vec<usize>>;
 
 /// A single search result.
 /// Contains the calculated match score and all matches.
 #[derive(Debug, Clone)]
-pub struct SearchResult {
+pub struct Match {
     score: isize,
-    matches: Vec<Match>,
+    matches: Vec<usize>,
 }
 
-impl SearchResult {
+impl Match {
     /// Creates an empty instance.
     pub fn new() -> Self {
-        SearchResult {
+        Match {
             score: 0,
             matches: Vec::new(),
         }
     }
 
     /// Creates an instance with the given score and matches.
-    pub fn with(score: isize, matches: Vec<Match>) -> Self {
-        SearchResult {
+    pub fn with(score: isize, matches: Vec<usize>) -> Self {
+        Match {
             score: score,
             matches: matches,
         }        
@@ -110,22 +89,22 @@ impl SearchResult {
     }
 }
 
-impl Ord for SearchResult {
-    fn cmp(&self, other: &SearchResult) -> Ordering {
+impl Ord for Match {
+    fn cmp(&self, other: &Match) -> Ordering {
         self.score.cmp(&other.score)
     }
 }
 
-impl PartialOrd for SearchResult {
-    fn partial_cmp(&self, other: &SearchResult) -> Option<Ordering> {
+impl PartialOrd for Match {
+    fn partial_cmp(&self, other: &Match) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Eq for SearchResult {}
+impl Eq for Match {}
 
-impl PartialEq for SearchResult {
-    fn eq(&self, other: &SearchResult) -> bool {
+impl PartialEq for Match {
+    fn eq(&self, other: &Match) -> bool {
         self.score == other.score
     }
 }

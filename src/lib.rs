@@ -90,12 +90,55 @@ impl Match {
         }        
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Match {
+            score: 0,
+            matches: Vec::with_capacity(capacity),
+        }
+    }
+
     pub fn score(&self) -> isize {
         self.score
     }
 
-    pub fn matches(&self) -> &Vec<Match> {
+    pub fn calc_score(&mut self, config: &ScoreConfig) -> isize {
+        self.score = calc_score(&self.matches, config);
+        self.score
+    }
+
+    pub fn matches(&self) -> &Vec<usize> {
         &self.matches
+    }
+
+    pub fn continuous_matches(&self) -> Vec<(usize, usize)> {
+        let mut groups = Vec::new();
+
+        let mut current_start = 0;
+        let mut current_len = 0;
+
+        let mut last_index = 0;
+        let mut is_first_index = true;
+
+        for index in &self.matches {
+            if !is_first_index && index - 1 == last_index {
+                current_len += 1;
+            } else {
+                if current_len > 0 {
+                    groups.push((current_start, current_len));
+                }
+                current_start = index.clone();
+                current_len = 1;
+
+                is_first_index = false;
+            }
+            last_index = index.clone();
+        }
+
+        if current_len > 0 {
+            groups.push((current_start, current_len));
+        }
+
+        groups
     }
 }
 
@@ -119,6 +162,11 @@ impl PartialEq for Match {
     }
 }
 
+pub struct ScoreConfig {
+    pub bonus_consecutive: usize,
+    pub penalty_distance: usize,
+}
+
 /// Container for search configuration.
 /// Allows for adjusting the factors used to calculate the match score.
 ///
@@ -139,169 +187,140 @@ impl PartialEq for Match {
 ///
 ///     println!("result: {:?}", search.best_match());
 ///
-pub struct FuzzySearcher {
-    score_distance: usize,
-    score_found_char: usize,
-    score_consecutive: usize,
-    target: String,
-    search: String,
+pub struct FuzzySearch<'a> {
+    score_config: ScoreConfig,
+    pattern: &'a str,
+    string: &'a str,
+    charmap: CharMap,
+    best_match: Match,
+    index_stack: Vec<usize>,
 }
 
-impl FuzzySearcher {
-    /// Creates a default `FuzzySearcher` instance.
-    pub fn new() -> Self {
-        FuzzySearcher {
-            score_distance: 4,
-            score_found_char: 16,
-            score_consecutive: 16,
-            target: String::new(),
-            search: String::new(),
+impl<'a> FuzzySearch<'a> {
+    /// Creates a default `FuzzySearch` instance.
+    pub fn new(pattern: &'a str, string: &'a str) -> Self {
+        if pattern.len() == 0 || string.len() == 0 {
+            panic!("Inputs can't be empty!");
+        }
+
+        FuzzySearch {
+            score_config: ScoreConfig {
+                bonus_consecutive: 16,
+                penalty_distance: 4,
+            },
+            pattern: pattern,
+            string: string,
+            charmap: build_charmap(string),
+            best_match: Match::with_capacity(pattern.len()),
+            index_stack: Vec::new(),
         }
     }
 
     /// Sets score used to adjust for distance between matching chars.
-    pub fn set_score_distance(&mut self, score: usize) {
-        self.score_distance = score;
-    }
-
-    /// Sets score added for each found char.
-    pub fn set_score_found_char(&mut self, score: usize) {
-        self.score_found_char = score;
-    }
-
-    /// Sets score added for every consecutive matching char.
-    pub fn set_score_consecutive(&mut self, score: usize) {
-        self.score_consecutive = score;
-    }
-
-    /// Sets search string.
-    pub fn set_target(&mut self, target: &str) {
-        self.target = target.to_owned();
-    }
-
-    /// Sets string to be searched in.
-    pub fn set_search(&mut self, search: &str) {
-        self.search = search.to_owned();
-    }
-
-    /// Calculates score for a match chain and accumulates it all in a 
-    /// `SearchResult`.
-    pub fn chain_score(&mut self, match_chain: &Vec<usize>) -> SearchResult {
-        let mut matches = Vec::new();
-        let mut score: isize = 0;
-
-        let mut consecutive_char_score = 0;
-
-        let mut last_index = 0;
-
-        let mut current_match = Match::new();
-
-        let mut first_char = true;
-
-        for pos in match_chain {
-            if *pos == last_index + 1 && !first_char {
-                consecutive_char_score += self.score_consecutive;
-                current_match.len += 1;
-            } else {
-                if current_match.len > 0 {
-                    matches.push(current_match);
-                }
-                consecutive_char_score = 0;
-                current_match = Match::with(*pos, 1);
-            }
-
-            let mut dist: isize = 0;
-            if !first_char {
-                dist = max(*pos as isize - last_index as isize - 1, 0) as isize;
-            }
-
-            first_char = false;
-
-            score -= dist * self.score_distance as isize;
-            score += self.score_found_char as isize;
-            score += consecutive_char_score as isize;
-
-            last_index = *pos;
-        }
-
-        if current_match.len > 0 {
-            matches.push(current_match);
-        }
-
-        SearchResult::with(score, matches)
+    pub fn set_score_config(&mut self, config: ScoreConfig) {
+        self.score_config = config;
     }
 
     /// Gets the best match for the given search string.
-    pub fn best_match(&mut self) -> Option<SearchResult> {
-        let chains = match_chains(&self.search, &self.target, 0, 0, &mut Vec::new());
-        let mut results: Vec<SearchResult> = chains.iter().map(|x| self.chain_score(x)).collect();
-        results.sort();
-        results.reverse();
+    pub fn best_match(&mut self) -> Option<Match> {
+        self.start_matching();
 
-        if let Some(r) = results.first() {
-            return Some(r.to_owned());
-        }
-        None
+        Some(self.best_match.clone())
     }
+
+    fn start_matching(&mut self) {
+        let pattern_char = self.pattern.chars().nth(0).unwrap();
+
+        if let Some(occurences) = occurences(pattern_char, &self.charmap, 0) {
+            for o in occurences {
+                self.match_char(1, o);
+            }
+        }
+    }
+
+    fn match_char(&mut self, pattern_index: usize, offset: usize) {
+        self.index_stack.push(offset);
+
+        let pattern_char;
+
+        if let Some(c) = self.pattern.chars().nth(pattern_index) {
+            pattern_char = c;
+        } else {
+            self.score_current();
+            self.index_stack.pop();
+            return
+        }
+
+        if let Some(occurences) = occurences(pattern_char, &self.charmap, offset + 1) {
+            for o in occurences {
+                self.match_char(pattern_index + 1, o);
+            }
+        } else {
+            self.score_current();
+        }
+        self.index_stack.pop();
+    }
+
+    fn score_current(&mut self) {
+        let current_score = calc_score(&self.index_stack, &self.score_config);
+        if current_score > self.best_match.score {
+            let new_best = Match::with(current_score, self.index_stack.clone());
+            self.best_match = new_best;
+        }
+    }
+}
+
+
+fn calc_score(positions: &Vec<usize>, config: &ScoreConfig) -> isize {
+    let mut score: isize = 0;
+    let mut last_pos: usize = 0;
+    let mut is_first_pos = true;
+
+    let mut current_consecutive_score: isize = 0;
+
+    for pos in positions {
+        // Ignore distance for first 
+        if is_first_pos {
+            last_pos = pos.clone();
+            is_first_pos = false;
+            continue;
+        }
+
+        let dist = pos - last_pos;
+
+        if dist == 1 {
+            current_consecutive_score += config.bonus_consecutive as isize;
+        } else {
+            current_consecutive_score = 0;
+        }
+
+        score -= (dist * config.penalty_distance) as isize;
+        score += current_consecutive_score;
+
+        last_pos = pos.clone();
+    }
+
+    score
 }
 
 /// Gets all occurences of `what` in `target` starting from `search_offset`.
 ///
-fn occurences(what: char, target: &str, search_offset: usize) -> Option<Vec<usize>> {
-    let mut occurences = Vec::new();
-    let mut start_index = search_offset;
-    loop {
-        if let Some(next_start) = target.chars().skip(start_index).position(|x| x == what) {
-            occurences.push(next_start + start_index);
-            start_index = next_start + start_index + 1;
-        } else {
-            break;
-        }
+fn occurences(what: char, charmap: &CharMap, offset: usize) -> Option<Vec<usize>> {
+    if let Some(occurences) = charmap.get(&what) {
+        return Some(occurences.iter().filter(|&i| i >= &offset).map(|i| i.clone()).collect());
     }
-    if occurences.len() > 0 {
-        Some(occurences)
-    } else {
-        None
-    }
+
+    None
 }
 
-/// Gets all possible match chains of `search` in `target`.
-///
-fn match_chains(search: &str, target: &str, search_offset: usize, mut index: usize, list: &Vec<usize>) -> Vec<Vec<usize>> {
-    let mut search_char;
+fn build_charmap(string: &str) -> CharMap {
+    let mut charmap = HashMap::new();
 
-    if let Some(c) = search.chars().nth(index) {
-        search_char = c;
-    } else {
-        let mut container = Vec::new();
-        container.push(list.clone());
-        return container;
+    for (i, c) in string.chars().enumerate() {
+        charmap.entry(c).or_insert(Vec::new()).push(i);
     }
 
-    let occurences = loop {
-        if let Some(result) = occurences(search_char, target, search_offset) {
-            break result;
-        } else {
-            index += 1;
-            if let Some(new_c) = search.chars().nth(index) {
-                search_char = new_c;
-            } else {
-                let mut container = Vec::new();
-                container.push(list.clone());
-                return container;
-            }
-        }
-    };
-
-    let mut results: Vec<Vec<usize>> = Vec::new();
-    for o in occurences {
-        let mut list_cpy = list.clone();
-        list_cpy.push(o);
-
-        results.append(&mut match_chains(search, target, o + 1, index + 1, &mut list_cpy));
-    }
-
-    results
+    charmap
 }
 
 /// Returns the best match for `search` in `target`.

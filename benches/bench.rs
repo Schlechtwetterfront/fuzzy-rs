@@ -8,6 +8,11 @@ use test::Bencher;
 use sublime_fuzzy::{best_match};
 
 #[bench]
+fn empty(b: &mut Bencher) {
+    b.iter(|| 1);
+}
+
+#[bench]
 fn short(b: &mut Bencher) {
     b.iter(|| best_match("jelly", "jellyfish"));
 }

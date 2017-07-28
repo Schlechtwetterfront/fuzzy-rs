@@ -403,22 +403,24 @@ mod tests {
     #[test]
     fn it_works() {
         use best_match;
-        println!("result: {:?}", best_match("obsinline", "observablecollection"));
+        println!("result: {:?}", best_match("obsion", "observablecollection"));
     }
+
     #[test]
-    fn formatting_works() {
+    fn formatting_works_1() {
         use {best_match, format_simple};
+
         let s = "observablecollection";
-        println!(
-            "formatted: {:?}",
-            format_simple(
-                &best_match("obsinline", s).unwrap(),
-                s,
-                "<span>",
-                "</span>"
-            )
+        let search = "obscoll";
+
+        let result = best_match(search, s).unwrap();
+
+        assert_eq!(
+            "<~obs~>ervable<~coll~>ection",
+            format_simple(&result, s, "<~", "~>")
         );
     }
+
     #[test]
     fn formatting_works_2() {
         use {best_match, format_simple};
@@ -427,6 +429,18 @@ mod tests {
         let search = "something";
         let result = best_match(search, s).unwrap();
          
-        println!("formatted: {:?}", format_simple(&result, s, "<b>", "</b>"));
+        assert_eq!(
+            "<b>some</b> search <b>thing</b>",
+            format_simple(&result, s, "<b>", "</b>")
+        );
+    }
+
+    #[test]
+    fn occurences_work() {
+        use {occurences, build_charmap};
+    
+        let charmap = build_charmap("some search thing");
+
+        assert_eq!([3usize, 6usize].to_vec(), occurences('e', &charmap, 0).unwrap());
     }
 }

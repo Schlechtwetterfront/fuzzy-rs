@@ -338,15 +338,24 @@ fn build_charmap(string: &str) -> CharMap {
 ///     // Output: score: 368
 ///     println!("score: {:?}", result.score());
 ///
-pub fn best_match(search: &str, target: &str) -> Option<SearchResult> {
-    let mut searcher = FuzzySearcher::new();
-    searcher.set_search(search);
-    searcher.set_target(target);
+pub fn best_match(pattern: &str, target: &str) -> Option<Match> {
+    // Filter out whitespace, it's very unlikely someone matches for whitespace.
+    // There is also a performance impact. Imagine a paragraph of text, there's
+    // loads of whitespace in that. So this algorithm will branch off at every
+    // space and calculate possibilites from there.
+    // Benchmarks for long_start_close and long_middle_close:
+    //      w spaces:   240,204,151 ns and 9,889,309 ns
+    //      w/o spaces:  62,251,231 ns and   791,259 ns
+    let condensed: String = pattern
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let mut searcher = FuzzySearch::new(&condensed, target);
 
     searcher.best_match()
 }
 
-/// Formats a `SearchResult` by appending `before` before any matches and `after`
+/// Formats a `Match` by appending `before` before any matches and `after`
 /// after any matches.
 ///
 /// # Examples
@@ -362,7 +371,7 @@ pub fn best_match(search: &str, target: &str) -> Option<SearchResult> {
 ///     // Output: <span>some</span> search <span>thing</span>
 ///     println!("formatted: {:?}", format_simple(&result, s, "<span>", "</span>"));
 ///
-pub fn format_simple(result: &SearchResult, string: &str, before: &str, after: &str) -> String {
+pub fn format_simple(result: &Match, string: &str, before: &str, after: &str) -> String {
     let str_before = before.to_owned();
     let str_after = after.to_owned();
 
@@ -370,16 +379,16 @@ pub fn format_simple(result: &SearchResult, string: &str, before: &str, after: &
 
     let mut last_end = 0;
 
-    for m in &result.matches {
+    for &(start, len) in &result.continuous_matches() {
         // Take piece between last match and this match.
-        pieces.push(string.chars().skip(last_end).take(m.start - last_end).collect::<String>());
+        pieces.push(string.chars().skip(last_end).take(start - last_end).collect::<String>());
         // Add identifier for matches.
         pieces.push(str_before.clone());
         // Add actual match.
-        pieces.push(string.chars().skip(m.start).take(m.len).collect());
+        pieces.push(string.chars().skip(start).take(len).collect());
         // Add after element.
         pieces.push(str_after.clone());
-        last_end = m.start + m.len;
+        last_end = start + len;
     }
 
     // If there's characters left after the last match, make sure to append them.

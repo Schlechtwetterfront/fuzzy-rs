@@ -190,7 +190,6 @@ pub struct ScoreConfig {
 pub struct FuzzySearch<'a> {
     score_config: ScoreConfig,
     pattern: &'a str,
-    string: &'a str,
     charmap: CharMap,
     best_match: Match,
     index_stack: Vec<usize>,
@@ -209,7 +208,6 @@ impl<'a> FuzzySearch<'a> {
                 penalty_distance: 4,
             },
             pattern: pattern,
-            string: string,
             charmap: build_charmap(string),
             best_match: Match::with_capacity(pattern.len()),
             index_stack: Vec::new(),

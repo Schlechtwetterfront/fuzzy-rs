@@ -10,7 +10,7 @@ gets slow relatively quickly.
 
 ### Documentation
 
-Check out the documentation at [docs.rs](https://docs.rs/sublime_fuzzy/0.2.0/sublime_fuzzy/).
+Check out the documentation at [docs.rs](https://docs.rs/sublime_fuzzy/).
 
 ### Usage
 

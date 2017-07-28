@@ -4,8 +4,8 @@
 //! consecutive/close groups of characters. Tries to find the best match by scoring
 //! multiple match paths.
 //! 
-//! Walks _all_ paths through the string that is being searched. Which means it
-//! gets slow relatively quickly.
+//! Walks _all_ paths through the string that is being searched. Currently best
+//! used for lines of text, not paragraphs.
 //! 
 //! # Usage
 //! 

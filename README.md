@@ -1,16 +1,12 @@
-# sublime_fuzzy
+# sublime_fuzzy ![sublime_fuzzy on crates.io](https://img.shields.io/crates/v/sublime_fuzzy.svg)
 
 Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 characters of a search string and calculates a score based on matching
 consecutive/close groups of characters. Tries to find the best match by scoring
 multiple match paths.
 
-Walks _all_ paths through the string that is being searched. Which means it
-gets slow relatively quickly.
-
-### Documentation
-
-Check out the documentation at [docs.rs](https://docs.rs/sublime_fuzzy/).
+Walks _all_ paths through the string that is being searched. Currently best
+used for lines of text, not paragraphs.
 
 ### Usage
 
@@ -64,3 +60,7 @@ println!("result: {:?}", search.best_match());
 **Note:** This module removes any whitespace in the pattern (`'something'`
 in the examples above). It does not apply any other formatting. Lowercasing
 the inputs for example has to be done manually.
+
+### Documentation
+
+Check out the documentation at [docs.rs](https://docs.rs/sublime_fuzzy/).

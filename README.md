@@ -2,11 +2,7 @@
 
 Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 characters of a search string and calculates a score based on matching
-consecutive/close groups of characters. Tries to find the best match by scoring
-multiple match paths.
-
-Walks _all_ paths through the string that is being searched. Currently best
-used for lines of text, not paragraphs.
+consecutive/close groups of characters.
 
 ### Usage
 

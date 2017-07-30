@@ -1,11 +1,9 @@
 //! 
 //! Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 //! characters of a search string and calculates a score based on matching
-//! consecutive/close groups of characters. Tries to find the best match by scoring
-//! multiple match paths.
+//! consecutive/close groups of characters.
 //! 
-//! Walks _all_ paths through the string that is being searched. Currently best
-//! used for lines of text, not paragraphs.
+//! Walks _all_ paths through the string that is being searched.
 //! 
 //! # Usage
 //! 
@@ -90,6 +88,8 @@ impl Match {
         }        
     }
 
+    /// Creates an instance with capacity of the matches vector set to
+    /// `capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         Match {
             score: 0,
@@ -97,19 +97,24 @@ impl Match {
         }
     }
 
+    /// Returns the score of this match.
     pub fn score(&self) -> isize {
         self.score
     }
 
+    /// Recalculates the score, stores it in the `Match` and then returns it.
     pub fn calc_score(&mut self, config: &ScoreConfig) -> isize {
         self.score = calc_score(&self.matches, config);
         self.score
     }
 
+    /// Returns the list of matched char positions.
     pub fn matches(&self) -> &Vec<usize> {
         &self.matches
     }
 
+    /// Groups the individual char matches into continuous match chains.
+    /// Returns a list of `(start_index, length)` pairs.
     pub fn continuous_matches(&self) -> Vec<(usize, usize)> {
         let mut groups = Vec::new();
 
@@ -226,6 +231,7 @@ impl<'a> FuzzySearch<'a> {
         Some(self.best_match.clone())
     }
 
+    /// Starts the matching process.
     fn start_matching(&mut self) {
         let pattern_char = self.pattern.chars().nth(0).unwrap();
 
@@ -236,6 +242,8 @@ impl<'a> FuzzySearch<'a> {
         }
     }
 
+    /// Matches char at `pattern_index` in `self.pattern`, offset search for
+    /// further characters by `offset`.
     fn match_char(&mut self, pattern_index: usize, offset: usize) {
         self.index_stack.push(offset);
 
@@ -259,6 +267,8 @@ impl<'a> FuzzySearch<'a> {
         self.index_stack.pop();
     }
 
+    /// Replace current best match with the current match if it has a higher
+    /// score.
     fn score_current(&mut self) {
         let current_score = calc_score(&self.index_stack, &self.score_config);
         if current_score > self.best_match.score {
@@ -268,7 +278,7 @@ impl<'a> FuzzySearch<'a> {
     }
 }
 
-
+/// Calculates score for `positions`.
 fn calc_score(positions: &Vec<usize>, config: &ScoreConfig) -> isize {
     let mut score: isize = 0;
     let mut last_pos: usize = 0;
@@ -311,6 +321,8 @@ fn occurences(what: char, charmap: &CharMap, offset: usize) -> Option<Vec<usize>
     None
 }
 
+/// Maps all occurences of a character in `string` into a char => vec[indices]
+/// dict.
 fn build_charmap(string: &str) -> CharMap {
     let mut charmap = HashMap::new();
 

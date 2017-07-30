@@ -168,8 +168,8 @@ impl PartialEq for Match {
 }
 
 pub struct ScoreConfig {
-    pub bonus_consecutive: usize,
-    pub penalty_distance: usize,
+    pub bonus_consecutive: isize,
+    pub penalty_distance: isize,
 }
 
 /// Container for search configuration.
@@ -198,6 +198,8 @@ pub struct FuzzySearch<'a> {
     charmap: CharMap,
     best_match: Match,
     index_stack: Vec<usize>,
+    score_stack: Vec<isize>,
+    consec_len_stack: Vec<usize>,
 }
 
 impl<'a> FuzzySearch<'a> {
@@ -215,7 +217,9 @@ impl<'a> FuzzySearch<'a> {
             pattern: pattern,
             charmap: build_charmap(string),
             best_match: Match::with_capacity(pattern.len()),
-            index_stack: Vec::new(),
+            index_stack: Vec::with_capacity(pattern.len()),
+            score_stack: Vec::with_capacity(pattern.len()),
+            consec_len_stack: Vec::with_capacity(pattern.len()),
         }
     }
 
@@ -245,15 +249,65 @@ impl<'a> FuzzySearch<'a> {
     /// Matches char at `pattern_index` in `self.pattern`, offset search for
     /// further characters by `offset`.
     fn match_char(&mut self, pattern_index: usize, offset: usize) {
+        // Calculate distance between this match and the last one.
+        let dist = match self.index_stack.last() {
+            Some(n) => offset - n,
+            None => 0,
+        };
+
         self.index_stack.push(offset);
 
+        // Calculate the score for this step.
+        let mut new_score = 0;
+
+        match dist {
+            // First match.
+            0 => {
+                self.consec_len_stack.push(0);
+                self.score_stack.push(0);
+            },
+            // Consecutive match.
+            1 => {
+                let consec_len = self.consec_len_stack.last().unwrap() + 1;
+                let consec_score = consec_len as isize * self.score_config.bonus_consecutive;
+                self.consec_len_stack.push(consec_len);
+
+                new_score = self.score_stack.last().unwrap() + consec_score;
+                self.score_stack.push(new_score);
+            },
+            // Non-consecutive match.
+            _ => {
+                self.consec_len_stack.push(0);
+
+                let penalty = (dist - 1) as isize * self.score_config.penalty_distance;
+                new_score = self.score_stack.last().unwrap() - penalty;
+                self.score_stack.push(new_score);
+            }
+        }
+
+        // Calculate maximum possible score for the remaining chars in
+        // `self.pattern`.
+        let max_left_score = max_score(
+            self.pattern.len() - (self.index_stack.len() - 1),
+            self.consec_len_stack.last().unwrap().clone(),
+            &self.score_config,
+        );
+
+        // Check if we can possibly reach a higher score than the current best.
+        // If not, stop further matching for this path.
+        if new_score + max_left_score < self.best_match.score() {
+            self.pop_all();
+            return
+        }
+
+        // Get the next char to look for.
         let pattern_char;
 
         if let Some(c) = self.pattern.chars().nth(pattern_index) {
             pattern_char = c;
         } else {
             self.score_current();
-            self.index_stack.pop();
+            self.pop_all();
             return
         }
 
@@ -261,16 +315,21 @@ impl<'a> FuzzySearch<'a> {
             for o in occurences {
                 self.match_char(pattern_index + 1, o);
             }
-        } else {
-            self.score_current();
         }
+        self.pop_all();
+    }
+
+    /// Pops all stacks.
+    fn pop_all(&mut self) {
         self.index_stack.pop();
+        self.score_stack.pop();
+        self.consec_len_stack.pop();
     }
 
     /// Replace current best match with the current match if it has a higher
     /// score.
     fn score_current(&mut self) {
-        let current_score = calc_score(&self.index_stack, &self.score_config);
+        let current_score = self.score_stack.last().unwrap().clone();
         if current_score > self.best_match.score {
             let new_best = Match::with(current_score, self.index_stack.clone());
             self.best_match = new_best;
@@ -284,7 +343,7 @@ fn calc_score(positions: &Vec<usize>, config: &ScoreConfig) -> isize {
     let mut last_pos: usize = 0;
     let mut is_first_pos = true;
 
-    let mut current_consecutive_score: isize = 0;
+    let mut consec_chain_len = 0;
 
     for pos in positions {
         // Ignore distance for first 
@@ -297,18 +356,33 @@ fn calc_score(positions: &Vec<usize>, config: &ScoreConfig) -> isize {
         let dist = pos - last_pos;
 
         if dist == 1 {
-            current_consecutive_score += config.bonus_consecutive as isize;
+            consec_chain_len += 1;
+            score += consec_chain_len * config.bonus_consecutive;
         } else {
-            current_consecutive_score = 0;
+            score -= dist as isize * config.penalty_distance;
+            consec_chain_len = 0;
         }
-
-        score -= (dist * config.penalty_distance) as isize;
-        score += current_consecutive_score;
 
         last_pos = pos.clone();
     }
 
     score
+}
+
+/// Calculate maximum possible score for a chain of length `num_positions` with
+/// starting consecutive match count of `consec_chain_len`.
+fn max_score(num_positions: usize, consec_chain_len: usize, config: &ScoreConfig) -> isize {
+    // Consecutive score doesn't apply to first element, so subtract 1.
+    let num_for_tri = num_positions - 1 + consec_chain_len;
+
+    let triangular = num_for_tri * (num_for_tri + 1) / 2;
+
+    // Assume we have the best possible combination, which is, currently, just
+    // consecutive positions.
+    let max_consecutive_score = triangular as isize * config.bonus_consecutive;
+    // As they are consecutive the distance penalty is 0 and there are no other
+    // scoring factors.
+    max_consecutive_score
 }
 
 /// Gets all occurences of `what` in `target` starting from `search_offset`.

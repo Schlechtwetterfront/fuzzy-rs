@@ -520,6 +520,36 @@ mod tests {
     }
 
     #[test]
+    fn formatting_works_3() {
+        use {best_match, format_simple};
+    
+        let s = "The empty benchmark is there as a baseline. An anecdote:
+            In my first compilation of the benchmark, I forgot to add -O to the
+            rustc command line, and wound up with a few ns/iter on an empty
+            benchmark. Thus, I now always have an empty benchmark in my list,
+            to make sure I benchmark an optimized version.";
+        let search = "emptybench";
+        let result = best_match(search, s).unwrap();
+
+        println!("{:?}", format_simple(&result, s, "<b>", "</b>"));
+    }
+
+    #[test]
+    fn formatting_works_4() {
+        use {best_match, format_simple};
+    
+        let s = "The empty benchmark is there as a baseline. An anecdote:
+            In my first compilation of the benchmark, I forgot to add -O to the
+            rustc command line, and wound up with a few ns/iter on an empty
+            benchmark. Thus, I now always have an empty benchmark in my list,
+            to make sure I benchmark an optimized version.";
+        let search = "emptybaseline";
+        let result = best_match(search, s).unwrap();
+
+        println!("{:?}", format_simple(&result, s, "<b>", "</b>"));
+    }
+
+    #[test]
     fn occurences_work() {
         use {occurences, build_charmap};
     

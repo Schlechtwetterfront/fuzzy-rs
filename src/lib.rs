@@ -259,8 +259,8 @@ impl<'a> FuzzySearch<'a> {
         match dist {
             // First match.
             0 => {
-                self.consec_len_stack.push(0);
-                self.score_stack.push(0);
+                self.consec_len_stack.push(1);
+                self.score_stack.push(self.score_config.bonus_consecutive);
             },
             // Consecutive match.
             1 => {
@@ -558,6 +558,16 @@ mod tests {
 
         assert_eq!([3usize, 6usize].to_vec(), occurences('e', &charmap, 0).unwrap());
     }
+
+    #[test]
+    fn single_characters() {
+        use {best_match, format_simple};
+
+        let r = best_match("F", "Fearless concurrency").unwrap();
+
+        assert_eq!("<F>earless concurrency", format_simple(&r, "Fearless concurrency", "<", ">"));
+    }
+
     #[test]
     fn empty_input() {
         use {best_match};

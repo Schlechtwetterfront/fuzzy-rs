@@ -1,4 +1,4 @@
-# sublime_fuzzy ![sublime_fuzzy on crates.io](https://img.shields.io/crates/v/sublime_fuzzy.svg)
+# sublime_fuzzy [![sublime_fuzzy on crates.io](https://img.shields.io/crates/v/sublime_fuzzy.svg)](https://crates.io/crates/sublime_fuzzy)
 
 Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 characters of a search string and calculates a score based on matching

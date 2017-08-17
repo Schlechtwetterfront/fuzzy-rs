@@ -205,10 +205,6 @@ pub struct FuzzySearch<'a> {
 impl<'a> FuzzySearch<'a> {
     /// Creates a default `FuzzySearch` instance.
     pub fn new(pattern: &'a str, string: &'a str) -> Self {
-        if pattern.len() == 0 || string.len() == 0 {
-            panic!("Inputs can't be empty!");
-        }
-
         FuzzySearch {
             score_config: ScoreConfig {
                 bonus_consecutive: 16,
@@ -434,6 +430,11 @@ pub fn best_match(pattern: &str, target: &str) -> Option<Match> {
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
+
+    if condensed.len() == 0 || target.len() == 0 {
+        return None;
+    }
+
     let mut searcher = FuzzySearch::new(&condensed, target);
 
     searcher.best_match()
@@ -556,5 +557,13 @@ mod tests {
         let charmap = build_charmap("some search thing");
 
         assert_eq!([3usize, 6usize].to_vec(), occurences('e', &charmap, 0).unwrap());
+    }
+    #[test]
+    fn empty_input() {
+        use {best_match};
+
+        let r = best_match("", "Fearless concurrency");
+
+        assert_eq!(None, r);
     }
 }

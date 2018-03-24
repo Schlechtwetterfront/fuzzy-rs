@@ -14,7 +14,16 @@ the score
 The default bonus/penalty values are set to give a lot of weight to word starts. So a pattern `scc` will match
 **S**occer**C**artoon**C**ontroller, not **S**o**cc**erCartoonController.
 
-# Usage
+### Match Examples
+
+With default weighting.
+
+| Pattern       | Target string             | Result
+| ---           | ---                       | ---
+| `scc`         | `SoccerCartoonController` | **S**occer**C**artoon**C**ontroller
+| `something`   | `some search thing`       | **some** search **thing**
+
+### Usage
 
 Basic usage:
 

@@ -1,6 +1,6 @@
 [package]
 name = "sublime_fuzzy"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["Benedikt Schatz <schlchtwtrfrnt@gmail.com>"]
 description = "Fuzzy matching algorithm based on Sublime Text's string search. Check out the repository's releases for a summarized changelog."
 repository = "https://github.com/Schlechtwetterfront/fuzzy-rs"

@@ -1,4 +1,6 @@
 
+use std::cmp::Ordering;
+
 /// A container holding the boni and penalties used to score a match.
 ///
 /// # Examples
@@ -85,6 +87,26 @@ impl Score {
         }
 
         self.matches.append(&mut other.matches);
+    }
+}
+
+impl Ord for Score {
+    fn cmp(&self, other: &Score) -> Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Score) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for Score {}
+
+impl PartialEq for Score {
+    fn eq(&self, other: &Score) -> bool {
+        self.score == other.score
     }
 }
 

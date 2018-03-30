@@ -176,11 +176,9 @@ impl<'a> FuzzySearch<'a> {
         if let Some(positions) = occurences(first_char, 0, &self.charmap) {
             best_score = positions.iter()
                 // Get score for every position
-                .map(|pos| self.score_deep(0, *pos, 0))
-                // Filter out unfinished matches
-                .filter_map(|s| s)
+                .filter_map(|pos| self.score_deep(0, *pos, 0))
                 // Only take the highest score
-                .max_by_key(|t| t.score)
+                .max()
                 .map_or(None, |s| Some(s));
         }
 
@@ -228,17 +226,15 @@ impl<'a> FuzzySearch<'a> {
         if let Some(occurences) = occurences(next_char, offset + 1, &self.charmap) {
             // Get the highest score of all sub-trees
             let best_score = occurences.iter()
-                .map(|pos| {
+                .filter_map(|pos| {
                     if (pos - offset) == 1 {
                         self.score_deep(next_index, *pos, consecutive + 1)
                     } else {
                         self.score_deep(next_index, *pos, 0)
                     }
                 })
-                // Filter `None`s
-                .filter_map(|s| s)
                 // Take highest
-                .max_by_key(|t| t.score)
+                .max()
                 // Put `Score` into `Option<Score>`
                 .map_or(None, |s| Some(s));
 

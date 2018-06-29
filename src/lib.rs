@@ -1,7 +1,7 @@
-//! 
+//!
 //! Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 //! characters of a search string and calculates a score.
-//! 
+//!
 //! The score is based on several factors:
 //! * **Word starts** like the `t` in `some_thing` get a bonus (`bonus_word_start`)
 //! * **Consecutive matches** get an accumulative bonus for every consecutive match (`bonus_consecutive`)
@@ -12,58 +12,58 @@
 //!
 //! The default bonus/penalty values are set to give a lot of weight to word starts. So a pattern `scc` will match
 //! **S**occer**C**artoon**C**ontroller, not **S**o**cc**erCartoonController.
-//! 
+//!
 //! # Match Examples
-//! 
+//!
 //! With default weighting.
-//! 
+//!
 //! | Pattern       | Target string             | Result
 //! | ---           | ---                       | ---
 //! | `scc`         | `SoccerCartoonController` | **S**occer**C**artoon**C**ontroller
 //! | `something`   | `some search thing`       | **some** search **thing**
-//! 
+//!
 //! # Usage
-//! 
+//!
 //! Basic usage:
-//! 
+//!
 //! ```rust
 //! use sublime_fuzzy::best_match;
-//! 
+//!
 //! let s = "some search thing";
 //! let search = "something";
 //! let result = best_match(search, s).unwrap();
-//! 
+//!
 //! println!("score: {:?}", result.score());
 //! ```
-//! 
+//!
 //! `Match.continuous_matches()` returns a list of consecutive matches
 //! (`(start_index, length)`). Based on those the input string can be formatted.
 //!
 //! `sublime_fuzzy` provides a simple formatting function that wraps matches in
 //! tags:
-//! 
+//!
 //! ```rust
 //! use sublime_fuzzy::{best_match, format_simple};
-//! 
+//!
 //! let s = "some search thing";
 //! let search = "something";
 //! let result = best_match(search, s).unwrap();
-//! 
+//!
 //! assert_eq!(
 //!     format_simple(&result, s, "<span>", "</span>"),
 //!     "<span>some</span> search <span>thing</span>"
 //! );
 //! ```
-//! 
+//!
 //! The weighting of the different factors can be adjusted:
-//! 
+//!
 //! ```rust
 //! use sublime_fuzzy::{FuzzySearch, ScoreConfig};
 //!
 //! let case_insensitive = true;
-//! 
+//!
 //! let mut search = FuzzySearch::new("something", "some search thing", case_insensitive);
-//! 
+//!
 //! let config = ScoreConfig {
 //!     bonus_consecutive: 12,
 //!     bonus_word_start: 64,
@@ -72,22 +72,28 @@
 //! };
 //!
 //! search.set_score_config(config);
-//! 
+//!
 //! println!("result: {:?}", search.best_match());
 //! ```
-//! 
+//!
 //! **Note:** Any whitespace in the pattern (`'something'`
 //! in the examples above) will be removed.
-//! 
+//!
 
-use std::collections::{HashMap};
+#[cfg(feature = "serde_support")]
+extern crate serde;
+#[cfg(feature = "serde_support")]
+#[macro_use]
+extern crate serde_derive;
+
+use std::collections::HashMap;
 
 mod matching;
-pub use matching::{Match};
+pub use matching::Match;
 
 mod scoring;
-pub use scoring::{ScoreConfig};
 use scoring::Score;
+pub use scoring::ScoreConfig;
 
 mod parse;
 
@@ -95,7 +101,7 @@ mod parse;
 /// Allows for adjusting the factors used to calculate the match score.
 ///
 /// # Examples
-/// 
+///
 /// Basic usage:
 ///
 ///     use sublime_fuzzy::{FuzzySearch, ScoreConfig};
@@ -111,6 +117,7 @@ mod parse;
 ///
 ///     assert!(search.best_match().is_some());
 ///
+#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct FuzzySearch<'a> {
     score_config: ScoreConfig,
 
@@ -144,7 +151,9 @@ impl<'a> FuzzySearch<'a> {
         let (charmap, word_starts) = parse::process_target_string(string, case_insensitive);
 
         FuzzySearch {
-            score_config: ScoreConfig { ..Default::default() },
+            score_config: ScoreConfig {
+                ..Default::default()
+            },
 
             pattern: parse::condense(pattern, case_insensitive),
             target: string,
@@ -187,14 +196,22 @@ impl<'a> FuzzySearch<'a> {
 
         match best_score {
             None => None,
-            Some(sc) => Some(Match::with(sc.score + coverage_score.round() as isize, sc.matches)),
+            Some(sc) => Some(Match::with(
+                sc.score + coverage_score.round() as isize,
+                sc.matches,
+            )),
         }
     }
 
     /// Recursively scores the "tree" of possible matches.
     ///
     /// Caches results for subtrees for faster calculation.
-    fn score_deep(&mut self, pattern_idx: usize, offset: usize, consecutive: usize) -> Option<Score> {
+    fn score_deep(
+        &mut self,
+        pattern_idx: usize,
+        offset: usize,
+        consecutive: usize,
+    ) -> Option<Score> {
         // Check if this "sub-tree" has already been scored
         if let Some(cached) = self.score_cache.get(&(pattern_idx, offset, consecutive)) {
             return cached.clone();
@@ -205,7 +222,7 @@ impl<'a> FuzzySearch<'a> {
         let mut this_score = Score::new(
             scoring::consecutive_score(consecutive, &self.score_config),
             consecutive,
-            Vec::new()
+            Vec::new(),
         );
 
         this_score.matches.push(offset);
@@ -217,7 +234,8 @@ impl<'a> FuzzySearch<'a> {
 
         // We have successfully matched the full pattern
         if next_index >= self.pattern.len() {
-            self.score_cache.insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
+            self.score_cache
+                .insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
             return Some(this_score);
         }
 
@@ -243,18 +261,21 @@ impl<'a> FuzzySearch<'a> {
                     // Add best child score to current score
                     this_score.extend(best, &self.score_config);
 
-                    self.score_cache.insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
+                    self.score_cache
+                        .insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
 
                     return Some(this_score);
-                },
+                }
                 None => {
-                    self.score_cache.insert((pattern_idx, offset, consecutive), None);
+                    self.score_cache
+                        .insert((pattern_idx, offset, consecutive), None);
 
                     return None;
                 }
             }
         } else {
-            self.score_cache.insert((pattern_idx, offset, consecutive), None);
+            self.score_cache
+                .insert((pattern_idx, offset, consecutive), None);
 
             return None;
         }
@@ -265,7 +286,13 @@ impl<'a> FuzzySearch<'a> {
 ///
 fn occurences(what: char, offset: usize, charmap: &parse::CharMap) -> Option<Vec<usize>> {
     if let Some(occurences) = charmap.get(&what) {
-        return Some(occurences.iter().filter(|&i| i >= &offset).map(|i| i.clone()).collect());
+        return Some(
+            occurences
+                .iter()
+                .filter(|&i| i >= &offset)
+                .map(|i| i.clone())
+                .collect(),
+        );
     }
 
     None
@@ -304,7 +331,7 @@ pub fn best_match(pattern: &str, target: &str) -> Option<Match> {
 /// # Examples
 ///
 /// Basic usage:
-/// 
+///
 ///     use sublime_fuzzy::{best_match, format_simple};
 ///
 ///     let s = "some search thing";
@@ -326,7 +353,13 @@ pub fn format_simple(result: &Match, string: &str, before: &str, after: &str) ->
 
     for &(start, len) in &result.continuous_matches() {
         // Take piece between last match and this match.
-        pieces.push(string.chars().skip(last_end).take(start - last_end).collect::<String>());
+        pieces.push(
+            string
+                .chars()
+                .skip(last_end)
+                .take(start - last_end)
+                .collect::<String>(),
+        );
         // Add identifier for matches.
         pieces.push(str_before.clone());
         // Add actual match.
@@ -338,15 +371,20 @@ pub fn format_simple(result: &Match, string: &str, before: &str, after: &str) ->
 
     // If there's characters left after the last match, make sure to append them.
     if last_end != string.len() {
-        pieces.push(string.chars().skip(last_end).take_while(|_| true).collect::<String>());
+        pieces.push(
+            string
+                .chars()
+                .skip(last_end)
+                .take_while(|_| true)
+                .collect::<String>(),
+        );
     }
     return pieces.join("");
 }
 
-
 #[cfg(test)]
 mod tests {
-    use {FuzzySearch, ScoreConfig, best_match};
+    use {best_match, FuzzySearch, ScoreConfig};
 
     #[test]
     fn full_match() {

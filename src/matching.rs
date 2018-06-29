@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 ///
 /// The actual matched characters are stored as indices into the target string.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct Match {
     score: isize,
     matches: Vec<usize>,
@@ -27,7 +28,7 @@ impl Match {
         Match {
             score: score,
             matches: matches,
-        }        
+        }
     }
 
     /// Creates an instance with capacity of the matches vector set to

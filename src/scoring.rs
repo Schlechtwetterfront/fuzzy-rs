@@ -1,4 +1,3 @@
-
 use std::cmp::Ordering;
 
 /// A container holding the boni and penalties used to score a match.
@@ -6,7 +5,7 @@ use std::cmp::Ordering;
 /// # Examples
 ///
 /// Don't give a bonus for matching word starts (like `T` in `SomeThing`).
-/// 
+///
 ///     use sublime_fuzzy::ScoreConfig;
 ///     
 ///     let score_cfg = ScoreConfig {
@@ -15,6 +14,7 @@ use std::cmp::Ordering;
 ///     };
 ///
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct ScoreConfig {
     pub bonus_consecutive: isize,
     pub bonus_word_start: isize,
@@ -28,7 +28,7 @@ impl ScoreConfig {
         bonus_consecutive: isize,
         bonus_word_start: isize,
         bonus_coverage: isize,
-        penalty_distance: isize
+        penalty_distance: isize,
     ) -> Self {
         ScoreConfig {
             bonus_consecutive: bonus_consecutive,
@@ -47,6 +47,7 @@ impl Default for ScoreConfig {
 
 /// Intermediate score used for scoring parts of the patterns.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct Score {
     pub score: isize,
     pub consecutive_matches: usize,
@@ -72,11 +73,11 @@ impl Score {
             let distance = first - last;
 
             match distance {
-                0 => {},
+                0 => {}
                 1 => {
                     self.consecutive_matches += 1;
                     self.score += self.consecutive_matches as isize * cfg.bonus_consecutive;
-                },
+                }
                 _ => {
                     self.consecutive_matches = 0;
                     let penalty = (distance as isize - 1) * cfg.penalty_distance;

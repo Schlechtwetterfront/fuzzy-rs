@@ -232,16 +232,17 @@ impl<'a> FuzzySearch<'a> {
             this_score.score += self.score_config.bonus_word_start;
         }
 
+        let next_char_opt = self.pattern.chars().nth(next_index);
+
         // We have successfully matched the full pattern
-        if next_index >= self.pattern.len() {
+        if next_char_opt.is_none() {
             self.score_cache
                 .insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
-            return Some(this_score);
+
+                return Some(this_score);
         }
 
-        let next_char = self.pattern.chars().nth(next_index).unwrap();
-
-        if let Some(occurences) = occurences(next_char, offset + 1, &self.charmap) {
+        if let Some(occurences) = occurences(next_char_opt.unwrap(), offset + 1, &self.charmap) {
             // Get the highest score of all sub-trees
             let best_score = occurences.iter()
                 .filter_map(|pos| {
@@ -337,7 +338,7 @@ pub fn best_match(pattern: &str, target: &str) -> Option<Match> {
 ///     let s = "some search thing";
 ///     let search = "something";
 ///     let result = best_match(search, s).unwrap();
-///     
+///
 ///     assert_eq!(
 ///         format_simple(&result, s, "<span>", "</span>"),
 ///         "<span>some</span> search <span>thing</span>"
@@ -480,6 +481,14 @@ mod tests {
     fn matches_filename() {
         let expected: Vec<usize> = vec![13, 14, 15, 16];
         let result = best_match("path", "/some/folder/path.rs").unwrap();
+
+        assert_eq!(result.matches(), &expected);
+    }
+
+    #[test]
+    fn matches_unicode() {
+        let expected: Vec<usize> = vec![4];
+        let result = best_match("👀", "🦀 👈 👀").unwrap();
 
         assert_eq!(result.matches(), &expected);
     }

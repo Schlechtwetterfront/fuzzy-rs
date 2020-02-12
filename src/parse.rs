@@ -28,7 +28,7 @@ fn is_word_sep(c: char) -> bool {
     c.is_whitespace() || c == '_' || c == '/' || c == '\\' || c == '-' || c == '.' || c == ','
 }
 
-/// Maps all occurences of a character in `string` into a char => vec[indices]
+/// Maps all occurrences of a character in `string` into a char => vec[indices]
 /// dict and puts all word starts (i.e. `some_string` => `[0, 5]`) into a `Set`.
 pub fn process_target_string(string: &str, ignore_case: bool) -> (CharMap, WordStartSet) {
     let mut charmap = HashMap::new();

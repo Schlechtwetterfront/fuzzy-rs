@@ -126,7 +126,7 @@ pub struct FuzzySearch<'a> {
     /// The processed (possibly lowercased) target string
     target: &'a str,
 
-    /// Map of char occurences in the target string
+    /// Map of char occurrences in the target string
     charmap: parse::CharMap,
     /// Set of word start indices
     word_starts: parse::WordStartSet,
@@ -134,7 +134,7 @@ pub struct FuzzySearch<'a> {
     /// Map of scores for subtrees. Key: `(pattern_index, search_offset, consecutive_matches)`
     ///
     /// * `pattern_index`: Index into the pattern (basically current char)
-    /// * `search_offset`: Offset to start search for occurences of the next char from
+    /// * `search_offset`: Offset to start search for occurrences of the next char from
     /// * `consecutive_matches`: Number of consecutive matches before this step.
     /// These are stored because the score for the subtree might differ if it's another consecutive match
     score_cache: HashMap<(usize, usize, usize), Option<Score>>,
@@ -182,7 +182,7 @@ impl<'a> FuzzySearch<'a> {
 
         let mut best_score: Option<Score> = None;
 
-        if let Some(positions) = occurences(first_char, 0, &self.charmap) {
+        if let Some(positions) = occurrences(first_char, 0, &self.charmap) {
             best_score = positions.iter()
                 // Get score for every position
                 .filter_map(|pos| self.score_deep(0, *pos, 0))
@@ -242,9 +242,9 @@ impl<'a> FuzzySearch<'a> {
                 return Some(this_score);
         }
 
-        if let Some(occurences) = occurences(next_char_opt.unwrap(), offset + 1, &self.charmap) {
+        if let Some(occurrences) = occurrences(next_char_opt.unwrap(), offset + 1, &self.charmap) {
             // Get the highest score of all sub-trees
-            let best_score = occurences.iter()
+            let best_score = occurrences.iter()
                 .filter_map(|pos| {
                     if (pos - offset) == 1 {
                         self.score_deep(next_index, *pos, consecutive + 1)
@@ -283,12 +283,12 @@ impl<'a> FuzzySearch<'a> {
     }
 }
 
-/// Gets all occurences of `what` in `target` starting from `search_offset`.
+/// Gets all occurrences of `what` in `target` starting from `search_offset`.
 ///
-fn occurences(what: char, offset: usize, charmap: &parse::CharMap) -> Option<Vec<usize>> {
-    if let Some(occurences) = charmap.get(&what) {
+fn occurrences(what: char, offset: usize, charmap: &parse::CharMap) -> Option<Vec<usize>> {
+    if let Some(occurrences) = charmap.get(&what) {
         return Some(
-            occurences
+            occurrences
                 .iter()
                 .filter(|&i| i >= &offset)
                 .map(|i| i.clone())

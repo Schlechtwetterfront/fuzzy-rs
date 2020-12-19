@@ -4,54 +4,50 @@ Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 characters of a search string and calculates a score.
 
 The score is based on several factors:
-* **Word starts** like the `t` in `some_thing` get a bonus (`bonus_word_start`)
-* **Consecutive matches** get an accumulative bonus for every consecutive match (`bonus_consecutive`)
-* Matches with higher **coverage** (targets `some_release` (lower) versus `a_release` (higher) with pattern
-`release`) will get a bonus multiplied by the coverage percentage (`bonus_coverage`)
-* The **distance** between two matches will be multiplied with the `penalty_distance` penalty and subtracted from
-the score
 
-The default bonus/penalty values are set to give a lot of weight to word starts. So a pattern `scc` will match
+- **Word starts** like the `t` in `some_thing` get a bonus (`bonus_word_start`)
+- **Consecutive matches** get an accumulative bonus for every consecutive match (`bonus_consecutive`)
+- Matches that also match **case** (`T` -> `T` instead of `t` -> `T`) in case of a case-insensitive search get a bonus (`bonus_match_case`)
+- The **distance** between two matches will be multiplied with the `penalty_distance` penalty and subtracted from the score
+
+The default scoring is configured to give a lot of weight to word starts. So a pattern `scc` will match
 **S**occer**C**artoon**C**ontroller, not **S**o**cc**erCartoonController.
 
-### Match Examples
+# Match Examples
 
 With default weighting.
 
-| Pattern       | Target string             | Result
-| ---           | ---                       | ---
-| `scc`         | `SoccerCartoonController` | **S**occer**C**artoon**C**ontroller
-| `something`   | `some search thing`       | **some** search **thing**
+| Pattern     | Target string             | Result                              |
+| ----------- | ------------------------- | ----------------------------------- |
+| `scc`       | `SoccerCartoonController` | **S**occer**C**artoon**C**ontroller |
+| `something` | `some search thing`       | **some** search **thing**           |
 
-### Usage
+# Usage
 
 Basic usage:
 
 ```rust
 use sublime_fuzzy::best_match;
 
-let s = "some search thing";
-let search = "something";
-let result = best_match(search, s).unwrap();
+let result = best_match("something", "some search thing");
 
-println!("score: {:?}", result.score());
+assert!(result.is_some());
 ```
 
-`Match.continuous_matches()` returns a list of consecutive matches
-(`(start_index, length)`). Based on those the input string can be formatted.
+`Match::continuous_matches` returns an iter of consecutive matches. Based on those the input
+string can be formatted.
 
-`sublime_fuzzy` provides a simple formatting function that wraps matches in
-tags:
+`format_simple` provides a simple formatting that wraps matches in tags:
 
 ```rust
 use sublime_fuzzy::{best_match, format_simple};
 
-let s = "some search thing";
-let search = "something";
-let result = best_match(search, s).unwrap();
+let target = "some search thing";
+
+let result = best_match("something", target).unwrap();
 
 assert_eq!(
-    format_simple(&result, s, "<span>", "</span>"),
+    format_simple(&result, target, "<span>", "</span>"),
     "<span>some</span> search <span>thing</span>"
 );
 ```
@@ -59,27 +55,25 @@ assert_eq!(
 The weighting of the different factors can be adjusted:
 
 ```rust
-use sublime_fuzzy::{FuzzySearch, ScoreConfig};
+use sublime_fuzzy::{FuzzySearch, Scoring};
 
-let case_insensitive = true;
-
-let mut search = FuzzySearch::new("something", "some search thing", case_insensitive);
-
-let config = ScoreConfig {
-    bonus_consecutive: 12,
-    bonus_word_start: 64,
-    bonus_coverage: 64,
-    penalty_distance: 4,
+// Or pick from one of the provided `Scoring::...` methods like `emphasize_word_starts`
+let scoring = Scoring {
+    bonus_consecutive: 128,
+    bonus_word_start: 0,
+    ..Scoring::default()
 };
 
-search.set_score_config(config);
+let result = FuzzySearch::new("something", "some search thing")
+    .case_sensitive()
+    .score_with(&scoring)
+    .best_match();
 
-println!("result: {:?}", search.best_match());
+assert!(result.is_some())
 ```
 
 **Note:** Any whitespace in the pattern (`'something'`
 in the examples above) will be removed.
-
 
 ### Documentation
 

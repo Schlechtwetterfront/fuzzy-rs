@@ -1,116 +1,60 @@
-use std::cmp::Ordering;
+pub static DEFAULT_SCORING: Scoring = Scoring {
+    bonus_consecutive: 8,
+    bonus_word_start: 72,
+    bonus_match_case: 8,
+    penalty_distance: 4,
+};
 
-/// A container holding the boni and penalties used to score a match.
-///
-/// # Examples
-///
-/// Don't give a bonus for matching word starts (like `T` in `SomeThing`).
-///
-///     use sublime_fuzzy::ScoreConfig;
-///     
-///     let score_cfg = ScoreConfig {
-///         bonus_word_start: 0,
-///         ..Default::default()
-///     };
-///
-#[derive(Debug, Clone)]
+/// Bonuses/penalties used for scoring a [`Match`](crate::matching::Match).
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
-pub struct ScoreConfig {
+pub struct Scoring {
+    /// `current_consecutive_count * bonus_consecutive` will be added for every
+    /// consecutive char match.
+    ///
+    /// `1 * bonus` for the first consecutive match, `2 * bonus` for
+    /// the second, etc.
     pub bonus_consecutive: isize,
+    /// Added when a query char matches a word start.
     pub bonus_word_start: isize,
-    pub bonus_coverage: isize,
+    /// Added when the matched query char also matches the case of the target char.
+    ///
+    /// Only applied if the search is case insensitive.
+    pub bonus_match_case: isize,
+    /// Subtracted from the score for every char between two matches.
     pub penalty_distance: isize,
 }
 
-impl ScoreConfig {
-    /// Creates a new `ScoreConfig` by specifying all boni/penalties.
+impl Scoring {
+    /// Creates a new configuration with the given bonuses/penalties.
     pub fn new(
         bonus_consecutive: isize,
         bonus_word_start: isize,
-        bonus_coverage: isize,
+        bonus_match_case: isize,
         penalty_distance: isize,
     ) -> Self {
-        ScoreConfig {
-            bonus_consecutive: bonus_consecutive,
-            bonus_word_start: bonus_word_start,
-            bonus_coverage: bonus_coverage,
-            penalty_distance: penalty_distance,
+        Scoring {
+            bonus_consecutive,
+            bonus_word_start,
+            bonus_match_case,
+            penalty_distance,
         }
+    }
+
+    /// Creates a configuration that emphasizes matching word starts (this is also the default).
+    pub fn emphasize_word_starts() -> Self {
+        Self::default()
+    }
+
+    /// Creates a configuration that emphasizes short distances between matched chars.
+    pub fn emphasize_distance() -> Self {
+        Scoring::new(12, 24, 8, 8)
     }
 }
 
-impl Default for ScoreConfig {
+impl Default for Scoring {
+    /// Creates a default configuration, see [`Scoring::emphasize_word_starts`].
     fn default() -> Self {
-        ScoreConfig::new(8, 72, 64, 4)
+        DEFAULT_SCORING.clone()
     }
-}
-
-/// Intermediate score used for scoring parts of the patterns.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
-pub struct Score {
-    pub score: isize,
-    pub consecutive_matches: usize,
-    pub matches: Vec<usize>,
-}
-
-impl Score {
-    pub fn new(score: isize, consec: usize, matches: Vec<usize>) -> Self {
-        Score {
-            score: score,
-            consecutive_matches: consec,
-            matches: matches,
-        }
-    }
-
-    /// Assimilates another `Score` into this one.
-    pub fn extend(&mut self, mut other: Score, cfg: &ScoreConfig) {
-        // println!("Extending {:?} with {:?}", self, other);
-        self.score += other.score;
-        self.consecutive_matches += other.consecutive_matches;
-
-        if let (Some(last), Some(first)) = (self.matches.last(), other.matches.first()) {
-            let distance = first - last;
-
-            match distance {
-                0 => {}
-                1 => {
-                    self.consecutive_matches += 1;
-                    self.score += self.consecutive_matches as isize * cfg.bonus_consecutive;
-                }
-                _ => {
-                    self.consecutive_matches = 0;
-                    let penalty = (distance as isize - 1) * cfg.penalty_distance;
-                    // println!("Subtracting {}", penalty);
-                    self.score -= penalty;
-                }
-            }
-        }
-
-        self.matches.append(&mut other.matches);
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Score) -> Ordering {
-        self.score.cmp(&other.score)
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Score) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Eq for Score {}
-
-impl PartialEq for Score {
-    fn eq(&self, other: &Score) -> bool {
-        self.score == other.score
-    }
-}
-
-pub fn consecutive_score(count: usize, score_config: &ScoreConfig) -> isize {
-    count as isize * score_config.bonus_consecutive
 }

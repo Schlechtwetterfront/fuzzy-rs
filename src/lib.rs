@@ -1,16 +1,13 @@
-//!
 //! Fuzzy matching algorithm based on Sublime Text's string search. Iterates through
 //! characters of a search string and calculates a score.
 //!
 //! The score is based on several factors:
 //! * **Word starts** like the `t` in `some_thing` get a bonus (`bonus_word_start`)
 //! * **Consecutive matches** get an accumulative bonus for every consecutive match (`bonus_consecutive`)
-//! * Matches with higher **coverage** (targets `some_release` (lower) versus `a_release` (higher) with pattern
-//! `release`) will get a bonus multiplied by the coverage percentage (`bonus_coverage`)
-//! * The **distance** between two matches will be multiplied with the `penalty_distance` penalty and subtracted from
-//! the score
+//! * Matches that also match **case** (`T` -> `T` instead of `t` -> `T`) in case of a case-insensitive search get a bonus (`bonus_match_case`)
+//! * The **distance** between two matches will be multiplied with the `penalty_distance` penalty and subtracted from the score
 //!
-//! The default bonus/penalty values are set to give a lot of weight to word starts. So a pattern `scc` will match
+//! The default scoring is configured to give a lot of weight to word starts. So a pattern `scc` will match
 //! **S**occer**C**artoon**C**ontroller, not **S**o**cc**erCartoonController.
 //!
 //! # Match Examples
@@ -29,28 +26,25 @@
 //! ```rust
 //! use sublime_fuzzy::best_match;
 //!
-//! let s = "some search thing";
-//! let search = "something";
-//! let result = best_match(search, s).unwrap();
+//! let result = best_match("something", "some search thing");
 //!
-//! println!("score: {:?}", result.score());
+//! assert!(result.is_some());
 //! ```
 //!
-//! `Match.continuous_matches()` returns a list of consecutive matches
-//! (`(start_index, length)`). Based on those the input string can be formatted.
+//! [`Match::continuous_matches`] returns an iter of consecutive matches. Based on those the input
+//! string can be formatted.
 //!
-//! `sublime_fuzzy` provides a simple formatting function that wraps matches in
-//! tags:
+//! [`format_simple`] provides a simple formatting that wraps matches in tags:
 //!
 //! ```rust
 //! use sublime_fuzzy::{best_match, format_simple};
 //!
-//! let s = "some search thing";
-//! let search = "something";
-//! let result = best_match(search, s).unwrap();
+//! let target = "some search thing";
+//!
+//! let result = best_match("something", target).unwrap();
 //!
 //! assert_eq!(
-//!     format_simple(&result, s, "<span>", "</span>"),
+//!     format_simple(&result, target, "<span>", "</span>"),
 //!     "<span>some</span> search <span>thing</span>"
 //! );
 //! ```
@@ -58,293 +52,89 @@
 //! The weighting of the different factors can be adjusted:
 //!
 //! ```rust
-//! use sublime_fuzzy::{FuzzySearch, ScoreConfig};
+//! use sublime_fuzzy::{FuzzySearch, Scoring};
 //!
-//! let case_insensitive = true;
-//!
-//! let mut search = FuzzySearch::new("something", "some search thing", case_insensitive);
-//!
-//! let config = ScoreConfig {
-//!     bonus_consecutive: 12,
-//!     bonus_word_start: 64,
-//!     bonus_coverage: 64,
-//!     penalty_distance: 4,
+//! // Or pick from one of the provided `Scoring::...` methods like `emphasize_word_starts`
+//! let scoring = Scoring {
+//!     bonus_consecutive: 128,
+//!     bonus_word_start: 0,
+//!     ..Scoring::default()
 //! };
 //!
-//! search.set_score_config(config);
+//! let result = FuzzySearch::new("something", "some search thing")
+//!     .case_sensitive()
+//!     .score_with(&scoring)
+//!     .best_match();
 //!
-//! println!("result: {:?}", search.best_match());
+//! assert!(result.is_some())
 //! ```
 //!
 //! **Note:** Any whitespace in the pattern (`'something'`
 //! in the examples above) will be removed.
 //!
-
 #[cfg(feature = "serde_support")]
 extern crate serde;
 #[cfg(feature = "serde_support")]
 #[macro_use]
 extern crate serde_derive;
 
-use std::collections::HashMap;
-
 mod matching;
-pub use matching::Match;
-
+mod parsing;
 mod scoring;
-use scoring::Score;
-pub use scoring::ScoreConfig;
+mod search;
 
-mod parse;
+pub use matching::{ContinuousMatch, ContinuousMatches, Match};
+pub use scoring::Scoring;
+pub use search::FuzzySearch;
 
-/// Container for search configuration.
-/// Allows for adjusting the factors used to calculate the match score.
+/// Returns the best match for `query` in the target string `string`.
+///
+/// Always tries to match the _full_ pattern. A partial match is considered
+/// invalid and will return [`None`]. Will also return [`None`] in case `query` or
+/// `string` are empty.
+///
+/// Note that whitespace in query will be _ignored_.
 ///
 /// # Examples
 ///
 /// Basic usage:
 ///
-///     use sublime_fuzzy::{FuzzySearch, ScoreConfig};
+/// ```rust
+/// use sublime_fuzzy::{best_match, Scoring};
 ///
-///     let mut search = FuzzySearch::new("something", "some search thing", true);
+/// let m = best_match("scc", "SoccerCartoonController")
+///     .expect("No match");
 ///
-///     let config = ScoreConfig {
-///         bonus_consecutive: 20,
-///         ..Default::default()
-///     };
-///     // Weight consecutive matching chars less.
-///     search.set_score_config(config);
+/// assert_eq!(m.matched_indices().len(), 3);
+/// assert_eq!(m.score(), 172);
+/// ```
 ///
-///     assert!(search.best_match().is_some());
-///
-#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
-pub struct FuzzySearch<'a> {
-    score_config: ScoreConfig,
-
-    /// The processed (possibly lowercased and whitespace removed) pattern
-    pattern: String,
-    /// The processed (possibly lowercased) target string
-    target: &'a str,
-
-    /// Map of char occurrences in the target string
-    charmap: parse::CharMap,
-    /// Set of word start indices
-    word_starts: parse::WordStartSet,
-
-    /// Map of scores for subtrees. Key: `(pattern_index, search_offset, consecutive_matches)`
-    ///
-    /// * `pattern_index`: Index into the pattern (basically current char)
-    /// * `search_offset`: Offset to start search for occurrences of the next char from
-    /// * `consecutive_matches`: Number of consecutive matches before this step.
-    /// These are stored because the score for the subtree might differ if it's another consecutive match
-    score_cache: HashMap<(usize, usize, usize), Option<Score>>,
+pub fn best_match(query: &str, target: &str) -> Option<Match> {
+    FuzzySearch::new(query, target)
+        .case_insensitive()
+        .best_match()
 }
 
-impl<'a> FuzzySearch<'a> {
-    /// Creates a default `FuzzySearch` instance.
-    ///
-    /// If `case_insensitive` is `true` both input strings will be lowercased
-    /// (_after_ parsing the target string to find word starts).
-    ///
-    /// Note that any whitespace in `pattern` will be removed.
-    pub fn new(pattern: &str, string: &'a str, case_insensitive: bool) -> Self {
-        let (charmap, word_starts) = parse::process_target_string(string, case_insensitive);
-
-        FuzzySearch {
-            score_config: ScoreConfig {
-                ..Default::default()
-            },
-
-            pattern: parse::condense(pattern, case_insensitive),
-            target: string,
-
-            charmap: charmap,
-            word_starts: word_starts,
-
-            score_cache: HashMap::new(),
-        }
-    }
-
-    /// Sets score used to adjust for distance between matching chars.
-    pub fn set_score_config(&mut self, config: ScoreConfig) {
-        self.score_config = config;
-    }
-
-    /// Finds the highest-scoring match for the pattern in the target string.
-    ///
-    /// Returns `None` if the pattern couldn't be fully matched.
-    pub fn best_match(&mut self) -> Option<Match> {
-        if self.pattern.len() == 0 {
-            return None;
-        }
-
-        let first_char = self.pattern.chars().nth(0).unwrap();
-
-        let mut best_score: Option<Score> = None;
-
-        if let Some(positions) = occurrences(first_char, 0, &self.charmap) {
-            best_score = positions.iter()
-                // Get score for every position
-                .filter_map(|pos| self.score_deep(0, *pos, 0))
-                // Only take the highest score
-                .max()
-                .map_or(None, |s| Some(s));
-        }
-
-        let coverage_mult: f64 = self.pattern.len() as f64 / self.target.len() as f64;
-        let coverage_score = self.score_config.bonus_coverage as f64 * coverage_mult;
-
-        match best_score {
-            None => None,
-            Some(sc) => Some(Match::with(
-                sc.score + coverage_score.round() as isize,
-                sc.matches,
-            )),
-        }
-    }
-
-    /// Recursively scores the "tree" of possible matches.
-    ///
-    /// Caches results for subtrees for faster calculation.
-    fn score_deep(
-        &mut self,
-        pattern_idx: usize,
-        offset: usize,
-        consecutive: usize,
-    ) -> Option<Score> {
-        // Check if this "sub-tree" has already been scored
-        if let Some(cached) = self.score_cache.get(&(pattern_idx, offset, consecutive)) {
-            return cached.clone();
-        }
-
-        let next_index = pattern_idx + 1;
-
-        let mut this_score = Score::new(
-            scoring::consecutive_score(consecutive, &self.score_config),
-            consecutive,
-            Vec::new(),
-        );
-
-        this_score.matches.push(offset);
-
-        // Is a word start
-        if self.word_starts.contains(&offset) {
-            this_score.score += self.score_config.bonus_word_start;
-        }
-
-        let next_char_opt = self.pattern.chars().nth(next_index);
-
-        // We have successfully matched the full pattern
-        if next_char_opt.is_none() {
-            self.score_cache
-                .insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
-
-                return Some(this_score);
-        }
-
-        if let Some(occurrences) = occurrences(next_char_opt.unwrap(), offset + 1, &self.charmap) {
-            // Get the highest score of all sub-trees
-            let best_score = occurrences.iter()
-                .filter_map(|pos| {
-                    if (pos - offset) == 1 {
-                        self.score_deep(next_index, *pos, consecutive + 1)
-                    } else {
-                        self.score_deep(next_index, *pos, 0)
-                    }
-                })
-                // Take highest
-                .max()
-                // Put `Score` into `Option<Score>`
-                .map_or(None, |s| Some(s));
-
-            match best_score {
-                Some(best) => {
-                    // Add best child score to current score
-                    this_score.extend(best, &self.score_config);
-
-                    self.score_cache
-                        .insert((pattern_idx, offset, consecutive), Some(this_score.clone()));
-
-                    return Some(this_score);
-                }
-                None => {
-                    self.score_cache
-                        .insert((pattern_idx, offset, consecutive), None);
-
-                    return None;
-                }
-            }
-        } else {
-            self.score_cache
-                .insert((pattern_idx, offset, consecutive), None);
-
-            return None;
-        }
-    }
-}
-
-/// Gets all occurrences of `what` in `target` starting from `search_offset`.
-///
-fn occurrences(what: char, offset: usize, charmap: &parse::CharMap) -> Option<Vec<usize>> {
-    if let Some(occurrences) = charmap.get(&what) {
-        return Some(
-            occurrences
-                .iter()
-                .filter(|&i| i >= &offset)
-                .map(|i| i.clone())
-                .collect(),
-        );
-    }
-
-    None
-}
-
-/// Returns the best match for `pattern` in `target`.
-///
-/// Returns `None` if no match has been found (that includes "invalid" input like an empty target string).
-///
-/// # Examples
-///
-/// Basic usage:
-///
-///     use sublime_fuzzy::best_match;
-///
-///     let s = "some search thing";
-///     let search = "something";
-///     let result = best_match(search, s).unwrap();
-///
-///     // Output: score: 368
-///     println!("score: {:?}", result.score());
-///
-pub fn best_match(pattern: &str, target: &str) -> Option<Match> {
-    if parse::condense(pattern, true).len() == 0 || target.len() == 0 {
-        return None;
-    }
-
-    let mut searcher = FuzzySearch::new(&pattern, target, true);
-
-    searcher.best_match()
-}
-
-/// Formats a `Match` by appending `before` before any matches and `after`
+/// Formats a [`Match`] by appending `before` before any matches and `after`
 /// after any matches.
 ///
 /// # Examples
 ///
 /// Basic usage:
 ///
-///     use sublime_fuzzy::{best_match, format_simple};
+/// ```rust
+/// use sublime_fuzzy::{best_match, format_simple};
 ///
-///     let s = "some search thing";
-///     let search = "something";
-///     let result = best_match(search, s).unwrap();
+/// let target_string = "some search thing";
+/// let result = best_match("something", target_string).unwrap();
 ///
-///     assert_eq!(
-///         format_simple(&result, s, "<span>", "</span>"),
-///         "<span>some</span> search <span>thing</span>"
-///     );
+/// assert_eq!(
+///     format_simple(&result, target_string, "<span>", "</span>"),
+///     "<span>some</span> search <span>thing</span>"
+/// );
+/// ```
 ///
-pub fn format_simple(result: &Match, string: &str, before: &str, after: &str) -> String {
+pub fn format_simple(match_: &Match, target: &str, before: &str, after: &str) -> String {
     let str_before = before.to_owned();
     let str_after = after.to_owned();
 
@@ -352,40 +142,42 @@ pub fn format_simple(result: &Match, string: &str, before: &str, after: &str) ->
 
     let mut last_end = 0;
 
-    for &(start, len) in &result.continuous_matches() {
-        // Take piece between last match and this match.
+    for c in match_.continuous_matches() {
+        // Piece between last match and this match
         pieces.push(
-            string
+            target
                 .chars()
                 .skip(last_end)
-                .take(start - last_end)
+                .take(c.start() - last_end)
                 .collect::<String>(),
         );
-        // Add identifier for matches.
+
         pieces.push(str_before.clone());
-        // Add actual match.
-        pieces.push(string.chars().skip(start).take(len).collect());
-        // Add after element.
+
+        // This match
+        pieces.push(target.chars().skip(c.start()).take(c.len()).collect());
+
         pieces.push(str_after.clone());
-        last_end = start + len;
+
+        last_end = c.start() + c.len();
     }
 
-    // If there's characters left after the last match, make sure to append them.
-    if last_end != string.len() {
-        pieces.push(
-            string
-                .chars()
-                .skip(last_end)
-                .take_while(|_| true)
-                .collect::<String>(),
-        );
+    // Leftover chars
+    if last_end != target.len() {
+        pieces.push(target.chars().skip(last_end).collect::<String>());
     }
-    return pieces.join("");
+
+    pieces.join("")
 }
 
 #[cfg(test)]
 mod tests {
-    use {best_match, FuzzySearch, ScoreConfig};
+    use crate::{best_match, format_simple, matching::ContinuousMatch};
+
+    #[test]
+    fn feature_serde() {
+        assert!(cfg!(feature = "serde_support"));
+    }
 
     #[test]
     fn full_match() {
@@ -398,98 +190,112 @@ mod tests {
     }
 
     #[test]
-    fn case_sensitive() {
-        let mut search = FuzzySearch::new("ttt", "The Two Towers", false);
-        assert!(search.best_match().is_none());
+    fn no_match() {
+        assert_eq!(best_match("abc", "def"), None);
     }
 
     #[test]
-    fn case_sensitive_2() {
-        let mut search = FuzzySearch::new("TTT", "The Two Towers", false);
-        assert!(search.best_match().is_some());
-    }
+    fn basic() {
+        let r = best_match("scc", "soccer cartoon controller");
 
-    #[test]
-    fn no_match_none() {
-        assert_eq!(best_match("no", "yes"), None);
+        assert!(r.is_some());
     }
 
     #[test]
     fn partial_match_none() {
-        // Only full matches return Some(score).
         assert_eq!(best_match("partial", "part"), None);
     }
 
     #[test]
-    fn distance_to_first_is_ignored() {
-        // Set coverage bonus to zero, otherwise the shorter test target will
-        // get more points.
-        let score_cfg = ScoreConfig {
-            bonus_coverage: 0,
-            ..Default::default()
-        };
+    fn case_sensitivity() {
+        assert!(
+            best_match("ttt", "The Two Towers").is_some(),
+            "Lower query chars do not match upper target chars"
+        );
 
-        let mut search = FuzzySearch::new("release", "some_release", true);
-        search.set_score_config(score_cfg.clone());
+        assert!(
+            best_match("TTT", "The Two Towers").is_some(),
+            "Upper query chars do not match upper target chars"
+        );
 
-        let m1 = search.best_match().unwrap();
-
-        let mut search2 = FuzzySearch::new("release", "a_release", true);
-        search2.set_score_config(score_cfg);
-
-        let m2 = search2.best_match().unwrap();
-
-        assert_eq!(m1.score(), m2.score());
+        assert!(
+            best_match("TTT", "the two towers").is_some(),
+            "Upper query chars do not match lower target chars"
+        );
     }
 
     #[test]
-    fn higher_coverage_scores_higher() {
-        let m1 = best_match("release", "a_release").unwrap();
-        let m2 = best_match("release", "some_release").unwrap();
+    fn case_sensitivity_scoring() {
+        let non_case_match = best_match("ttt", "The Two Towers").unwrap();
+        let case_match = best_match("TTT", "The Two Towers").unwrap();
 
-        assert!(m1.score() > m2.score());
-    }
-
-    // Tests if word starts are selected over continuous matches.
-    #[test]
-    fn word_starts_score_higher() {
-        let result = best_match("scc", "SccsCoolController").unwrap();
-        let expected: Vec<usize> = vec![0, 4, 8];
-
-        assert_eq!(result.matches(), &expected);
+        assert!(non_case_match.score() < case_match.score());
     }
 
     #[test]
-    fn invalid_target() {
-        assert_eq!(best_match("test", ""), None);
+    fn whitespace() {
+        assert!(best_match("t t", "The Two Towers").is_some());
     }
 
     #[test]
-    fn invalid_pattern() {
+    fn word_starts_count_more() {
+        let r = best_match("something", "some search thing");
+
+        assert_eq!(
+            r.unwrap()
+                .continuous_matches()
+                .collect::<Vec<ContinuousMatch>>(),
+            vec![ContinuousMatch::new(0, 4), ContinuousMatch::new(12, 5)]
+        );
+    }
+
+    #[test]
+    fn word_starts_count_more_2() {
+        let m = best_match("scc", "SccsCoolController").unwrap();
+
+        assert_eq!(
+            m.continuous_matches().collect::<Vec<ContinuousMatch>>(),
+            vec![
+                ContinuousMatch::new(0, 1),
+                ContinuousMatch::new(4, 1),
+                ContinuousMatch::new(8, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_query() {
         assert_eq!(best_match("", "test"), None);
     }
 
     #[test]
-    fn matches_1() {
-        let expected: Vec<usize> = vec![0, 6, 13];
-        let result = best_match("scc", "SoccerCartoonController").unwrap();
-
-        assert_eq!(result.matches(), &expected);
+    fn empty_target() {
+        assert_eq!(best_match("test", ""), None);
     }
 
     #[test]
-    fn matches_filename() {
-        let expected: Vec<usize> = vec![13, 14, 15, 16];
-        let result = best_match("path", "/some/folder/path.rs").unwrap();
+    fn distance_to_first_is_ignored() {
+        let a = best_match("release", "some_release").unwrap();
+        let b = best_match("release", "a_release").unwrap();
 
-        assert_eq!(result.matches(), &expected);
+        assert_eq!(a.score(), b.score());
     }
 
     #[test]
     fn matches_unicode() {
-        let expected: Vec<usize> = vec![4];
-        let result = best_match("👀", "🦀 👈 👀").unwrap();
+        let m = best_match("👀", "🦀 👈 👀").unwrap();
 
-        assert_eq!(result.matches(), &expected);
+        assert_eq!(
+            m.matched_indices().cloned().collect::<Vec<usize>>(),
+            vec![4]
+        );
+    }
+
+    #[test]
+    fn formats_unicode() {
+        let s = "🦀 👈 👀";
+        let m = best_match("👀", s).unwrap();
+
+        assert_eq!(format_simple(&m, s, "<", ">"), "🦀 👈 <👀>");
     }
 }
